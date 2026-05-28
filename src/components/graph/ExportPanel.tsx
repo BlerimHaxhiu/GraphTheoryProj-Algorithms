@@ -2,16 +2,22 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Save, Download, Image as ImageIcon } from 'lucide-react';
+import { Save, Download, Image as ImageIcon, Printer } from 'lucide-react';
 import { useLanguage } from '@/hooks/use-language';
 
 interface ExportPanelProps {
   onSaveGraph: () => void;
   onExportJSON: () => void;
   onExportPNG: () => void;
+  onPrint: () => void;
 }
 
-export function ExportPanel({ onSaveGraph, onExportJSON, onExportPNG }: ExportPanelProps) {
+export function ExportPanel({
+  onSaveGraph,
+  onExportJSON,
+  onExportPNG,
+  onPrint,
+}: ExportPanelProps) {
   const { t } = useLanguage();
 
   return (
@@ -34,6 +40,10 @@ export function ExportPanel({ onSaveGraph, onExportJSON, onExportPNG }: ExportPa
         <Button onClick={onExportPNG} className="w-full justify-start" variant="outline">
           <ImageIcon className="mr-2 h-4 w-4" />
           {t('export.exportPng')}
+        </Button>
+        <Button onClick={onPrint} className="w-full justify-start" variant="outline">
+          <Printer className="mr-2 h-4 w-4" />
+          {t('export.print')}
         </Button>
       </CardContent>
     </Card>

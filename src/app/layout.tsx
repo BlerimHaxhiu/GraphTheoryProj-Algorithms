@@ -11,7 +11,7 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Graph Algorithms Analysis App',
+  title: 'Graph Algorithm Visualizer',
   description: 'A powerful tool for graph visualization and analysis.',
 };
 

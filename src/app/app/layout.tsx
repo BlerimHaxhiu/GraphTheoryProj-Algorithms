@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Graph Algorithms Analysis App',
+  title: 'Graph Algorithm Visualizer',
   description: 'Create, edit, and study graphs with graph algorithms.',
 };
 

@@ -14,6 +14,8 @@ import { ExecutionHistoryPanel } from '@/components/graph/ExecutionHistoryPanel'
 import { CompareAlgorithmsPanel } from '@/components/graph/CompareAlgorithmsPanel';
 import { ExportPanel } from '@/components/graph/ExportPanel';
 import { FullscreenSection } from '@/components/ui/fullscreen-section';
+import { GraphChatbot } from '@/components/chatbot/GraphChatbot';
+import { PrintableGraphReport } from '@/components/graph/PrintableGraphReport';
 
 import type { Node, Edge, AlgorithmStep, AlgorithmType, ExecutionLogEntry } from '@/types/graph';
 import { generateNodeId, getNextNodeLabel, buildAdjacencyMatrix, generateEdgeId, graphHasDirectedEdges, hasNegativeEdgeWeights, normalizeEdge, serializeGraphPayload } from '@/lib/graph-utils';
@@ -863,6 +865,11 @@ function GraphAppPageContent() {
     }
   };
 
+  const handlePrint = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    window.print();
+  }, []);
+
   const handleGenerateFromMatrix = useCallback((matrixString: string) => {
     try {
         const rows = matrixString.trim().split('\n').map(row => row.trim()).filter(Boolean);
@@ -1064,13 +1071,17 @@ function GraphAppPageContent() {
                 onSaveGraph={handleSaveGraph}
                 onExportJSON={handleExportJSON}
                 onExportPNG={handleExportPNG}
+                onPrint={handlePrint}
               />
             </FullscreenSection>
             <FullscreenSection
               isActive={fullscreenSection === 'explanation'}
               onToggle={() => toggleFullscreen('explanation')}
             >
-              <AlgorithmExplanationPanel algorithm={lastExecutedAlgorithm} />
+              <AlgorithmExplanationPanel
+                algorithm={lastExecutedAlgorithm}
+                isMaximized={fullscreenSection === 'explanation'}
+              />
             </FullscreenSection>
             <FullscreenSection
               isActive={fullscreenSection === 'compare'}
@@ -1082,6 +1093,32 @@ function GraphAppPageContent() {
           </div>
         </main>
       </div>
+      <GraphChatbot
+        selectedAlgorithm={lastExecutedAlgorithm}
+        nodes={nodes}
+        edges={edges}
+        startNodeId={startNode}
+        endNodeId={endNode}
+        currentStep={currentAlgorithmStep}
+        automation={{
+          nodes,
+          edges,
+          startNodeId: startNode,
+          endNodeId: endNode,
+          setStartNodeId: setStartNode,
+          setEndNodeId: setEndNode,
+          runAlgorithm: (algorithm, startId, endId) => runAlgorithm(algorithm, startId, endId),
+          clearResult: resetExecutionState,
+        }}
+      />
+      <PrintableGraphReport
+        nodes={nodes}
+        edges={edges}
+        algorithm={lastExecutedAlgorithm}
+        startNodeId={startNode}
+        endNodeId={endNode}
+        reportLog={algorithmReportLog}
+      />
     </div>
   );
 }

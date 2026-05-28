@@ -10,7 +10,9 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test:algorithms": "node -r sucrase/register/ts tests/graph-algorithms.test.js"
+    "test:algorithms": "node -r sucrase/register/ts tests/graph-algorithms.test.js",
+    "test:chatbot": "node -r sucrase/register/ts tests/chatbot-parser.test.js",
+    "test:translations": "node -r sucrase/register/ts tests/translation-completeness.test.js"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.8.0",

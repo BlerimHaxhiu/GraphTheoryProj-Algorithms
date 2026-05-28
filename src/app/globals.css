@@ -132,3 +132,88 @@
     background: hsl(var(--muted-foreground)/0.8);
   }
 }
+
+/* ──────────────────────────── Print stylesheet ────────────────────────────
+ * Goal: when the user prints, only the dedicated PrintableGraphReport is
+ * visible — no app chrome, no panels, no scrollbars, white background, dark
+ * text. The report renders SVG so it scales cleanly to any page size.
+ * ───────────────────────────────────────────────────────────────────────── */
+
+@page {
+  size: A4 portrait;
+  margin: 14mm 14mm 16mm 14mm;
+}
+
+@media print {
+  /* Force a clean white-paper appearance regardless of the active theme. */
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  body {
+    display: block !important;
+  }
+
+  /* The PrintableGraphReport is portaled into <body>, so hiding every direct
+   * body child except `.print-only-root` cleanly removes the running app
+   * (controls, canvas, panels, chatbot, toasts) from the printed page. */
+  body > *:not(.print-only-root) {
+    display: none !important;
+  }
+
+  .print-only-root {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    opacity: 1 !important;
+    z-index: auto !important;
+    pointer-events: auto !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Avoid splitting the graph SVG across pages. */
+  .print-graph-container {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  /* Strip shadows / blurs that don't print well. */
+  .print-only-root *,
+  .print-only-root *::before,
+  .print-only-root *::after {
+    box-shadow: none !important;
+    text-shadow: none !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    color-adjust: exact;
+  }
+
+  /* SVG sizing in print. */
+  .print-only-root svg {
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* Opt-out class still respected. */
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* On screen the portaled report sits behind everything and is invisible. */
+.print-only-root {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  z-index: -1;
+}
