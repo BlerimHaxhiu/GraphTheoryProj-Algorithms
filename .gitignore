@@ -47,6 +47,7 @@ next-env.d.ts
 .modified
 
 # Local debug / dev-server artifacts
+/.next-build/
 /.next-debug/
 /.next-debug-dev/
 /.debug-run/

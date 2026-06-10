@@ -4,7 +4,7 @@ import type { AlgorithmStep, Node, Edge } from '@/types/graph';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn } from '@/lib/utils';
-import { MessageSquare, Shuffle, LocateFixed, Waypoints, RefreshCcw, AlertTriangle, ListChecks, PlayCircle } from 'lucide-react';
+import { MessageSquare, Shuffle, LocateFixed, Waypoints, RefreshCcw, AlertTriangle, ListChecks, PlayCircle, Sprout } from 'lucide-react';
 import { useLanguage } from '@/hooks/use-language';
 
 interface AlgorithmReportPanelProps {
@@ -26,6 +26,13 @@ export function AlgorithmReportPanel({ reportLog, nodes, edges }: AlgorithmRepor
     let IconComponent;
     let textColorClass = 'text-foreground';
     let bgColorClass = 'bg-card hover:bg-muted/50';
+
+    if (step.mstEdges?.length) {
+      IconComponent = Sprout;
+      textColorClass = 'text-primary';
+      bgColorClass = 'bg-primary/10 hover:bg-primary/20';
+      return { IconComponent, textColorClass, bgColorClass };
+    }
 
     switch (step.type) {
       case 'visit-node':
@@ -67,6 +74,17 @@ export function AlgorithmReportPanel({ reportLog, nodes, edges }: AlgorithmRepor
   };
 
   const formatStepMessage = (step: AlgorithmStep): string => {
+    if (step.mstEdges?.length) {
+      const mstEdges = step.mstEdges
+        .map(edgeId => {
+          const edge = edges.find(candidate => candidate.id === edgeId);
+          if (!edge) return edgeId;
+          return `${getNodeLabel(edge.source)}-${getNodeLabel(edge.target)}`;
+        })
+        .join(', ');
+      return `${t('algorithmReport.finalMst')}: ${mstEdges || '-'}. ${t('algorithmReport.totalWeight')}: ${step.totalWeight ?? 0}`;
+    }
+
     switch (step.type) {
       case 'visit-node':
         return `${t('algorithmReport.visitNode')}: ${getNodeLabel(step.nodeId)}`;

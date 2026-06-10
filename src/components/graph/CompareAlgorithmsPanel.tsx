@@ -49,6 +49,7 @@ export function CompareAlgorithmsPanel({ history }: CompareAlgorithmsPanelProps)
               <TableHeader className="sticky top-0 z-10 bg-card/95">
                 <TableRow>
                   <TableHead className="px-2 py-1.5 sm:px-3 sm:py-2">{t('algorithmComparison.algorithm')}</TableHead>
+                  <TableHead className="px-2 py-1.5 sm:px-3 sm:py-2">{t('algorithmComparison.heuristicMode')}</TableHead>
                   <TableHead className="px-2 py-1.5 text-center sm:px-3 sm:py-2">{t('algorithmComparison.time')}</TableHead>
                   <TableHead className="px-2 py-1.5 sm:px-3 sm:py-2">{t('algorithmComparison.complexity')}</TableHead>
                   <TableHead className="px-2 py-1.5 text-center sm:px-3 sm:py-2">V | E</TableHead>
@@ -58,11 +59,18 @@ export function CompareAlgorithmsPanel({ history }: CompareAlgorithmsPanelProps)
               <TableBody>
                 {history.slice().reverse().map(entry => (
                   <TableRow key={entry.id} className="hover:bg-muted/20">
-                    <TableCell className="max-w-[100px] truncate px-2 py-1.5 font-medium text-primary sm:max-w-[120px] sm:px-3 sm:py-2">
+                  <TableCell className="max-w-[100px] truncate px-2 py-1.5 font-medium text-primary sm:max-w-[120px] sm:px-3 sm:py-2">
                       {entry.algorithm.toUpperCase()}
                       <div className="text-[10px] text-muted-foreground sm:text-[11px]">
                         {format(entry.startTime, 'HH:mm:ss', { locale })}
                       </div>
+                    </TableCell>
+                    <TableCell className="px-2 py-1.5 text-muted-foreground sm:px-3 sm:py-2">
+                      {entry.algorithm === 'a-star'
+                        ? entry.heuristicMode === 'zero'
+                          ? t('algorithmComparison.aStarZero')
+                          : t('algorithmComparison.aStarEuclidean')
+                        : '—'}
                     </TableCell>
                     <TableCell className="px-2 py-1.5 text-center tabular-nums sm:px-3 sm:py-2">
                       {entry.executionTimeMs.toFixed(2)}

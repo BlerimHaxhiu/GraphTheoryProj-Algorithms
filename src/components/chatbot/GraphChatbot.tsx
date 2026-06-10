@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, MessageCircle, RotateCcw, Send, X } from 'lucide-react';
+import { Bot, GraduationCap, MessageCircle, RotateCcw, Send, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -12,6 +12,7 @@ import {
   generateChatbotResponse,
   getSuggestedQuestions,
   type ChatbotMessage,
+  type ChatbotMode,
 } from '@/lib/chatbot-responses';
 import { parseChatbotCommand } from '@/lib/chatbot-command-parser';
 import {
@@ -50,26 +51,31 @@ export function GraphChatbot({
   const { t, language } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
+  const [mode, setMode] = useState<ChatbotMode>('assistant');
   const [messages, setMessages] = useState<ChatbotMessage[]>([]);
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const welcomeText = t('chatbot.welcome');
+  const welcomeText = mode === 'mentor' ? t('chatbot.mentorWelcome') : t('chatbot.welcome');
 
   useEffect(() => {
-    if (messages.length === 0) {
-      setMessages([
-        {
-          id: createId(),
-          role: 'assistant',
-          text: welcomeText,
-          timestamp: Date.now(),
-        },
-      ]);
-    }
-    // We only want to reset the welcome message when language changes
-    // and the conversation is empty/single.
-  }, [welcomeText, messages.length]);
+    // Seed (or refresh) the welcome message only while the conversation hasn't
+    // really started — so switching language or mode updates the greeting, but
+    // an ongoing chat is never wiped.
+    setMessages(prev => {
+      if (prev.length <= 1) {
+        return [
+          {
+            id: createId(),
+            role: 'assistant',
+            text: welcomeText,
+            timestamp: Date.now(),
+          },
+        ];
+      }
+      return prev;
+    });
+  }, [welcomeText]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -91,8 +97,8 @@ export function GraphChatbot({
   }, [isOpen]);
 
   const suggestions = useMemo(
-    () => getSuggestedQuestions(language, selectedAlgorithm),
-    [language, selectedAlgorithm]
+    () => getSuggestedQuestions(language, selectedAlgorithm, mode),
+    [language, selectedAlgorithm, mode]
   );
 
   const handleSend = useCallback(
@@ -201,12 +207,16 @@ export function GraphChatbot({
           <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 bg-gradient-to-r from-primary/15 via-primary/5 to-transparent px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/15 text-primary">
-                <Bot className="h-5 w-5" />
+                {mode === 'mentor' ? (
+                  <GraduationCap className="h-5 w-5" />
+                ) : (
+                  <Bot className="h-5 w-5" />
+                )}
               </span>
               <div className="flex flex-col">
                 <span className="text-sm font-semibold leading-tight">{t('chatbot.title')}</span>
                 <span className="text-[11px] text-muted-foreground leading-tight">
-                  {t('chatbot.subtitle')}
+                  {mode === 'mentor' ? t('chatbot.mentorSubtitle') : t('chatbot.subtitle')}
                 </span>
               </div>
             </div>
@@ -235,6 +245,36 @@ export function GraphChatbot({
               </Button>
             </div>
           </header>
+
+          <div
+            className="flex shrink-0 items-center gap-1 border-b border-border/60 bg-background/40 px-3 py-2"
+            role="tablist"
+            aria-label={t('chatbot.modeSwitchLabel')}
+          >
+            {(['assistant', 'mentor'] as ChatbotMode[]).map(m => (
+              <button
+                key={m}
+                type="button"
+                role="tab"
+                aria-selected={mode === m}
+                onClick={() => setMode(m)}
+                className={cn(
+                  'flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  mode === m
+                    ? 'bg-primary text-primary-foreground shadow-sm'
+                    : 'text-muted-foreground hover:bg-primary/10 hover:text-foreground'
+                )}
+              >
+                {m === 'mentor' ? (
+                  <GraduationCap className="h-3.5 w-3.5" />
+                ) : (
+                  <Bot className="h-3.5 w-3.5" />
+                )}
+                {m === 'mentor' ? t('chatbot.modeMentor') : t('chatbot.modeAssistant')}
+              </button>
+            ))}
+          </div>
 
           <div className="min-h-0 flex-1 bg-background/40">
             <ScrollArea ref={handleScrollAreaRef} className="h-full w-full">

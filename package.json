@@ -11,8 +11,11 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test:algorithms": "node -r sucrase/register/ts tests/graph-algorithms.test.js",
+    "test:playback": "node -r sucrase/register/ts tests/playback-utils.test.js",
     "test:chatbot": "node -r sucrase/register/ts tests/chatbot-parser.test.js",
-    "test:translations": "node -r sucrase/register/ts tests/translation-completeness.test.js"
+    "test:mentor": "node -r sucrase/register/ts tests/mentor.test.js",
+    "test:translations": "node -r sucrase/register/ts tests/translation-completeness.test.js",
+    "demo:screenshots": "node tools/screenshots/capture-demo.js"
   },
   "dependencies": {
     "@genkit-ai/googleai": "^1.8.0",
@@ -67,7 +70,9 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "genkit-cli": "^0.0.2",
+    "playwright": "^1.60.0",
     "postcss": "^8",
+    "sucrase": "^3.35.0",
     "tailwindcss": "^3.4.1",
     "typescript": "^5"
   }

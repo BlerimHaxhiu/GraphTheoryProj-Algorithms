@@ -27,6 +27,10 @@ function lastPath(steps) {
   return steps.filter(step => step.type === 'highlight-path').at(-1)?.path ?? null;
 }
 
+function messagesByKey(steps, key) {
+  return steps.filter(step => step.messageKey === key).map(step => renderStepMessage(step));
+}
+
 function makeNode(id, x = 0, y = 0) {
   return { id, label: id, x, y };
 }
@@ -59,7 +63,12 @@ runTest('dijkstra finds the expected shortest path', () => {
 });
 
 runTest('aStar matches the optimal path on non-negative weights', () => {
-  const nodes = [makeNode('A'), makeNode('B'), makeNode('C'), makeNode('D')];
+  const nodes = [
+    makeNode('A', 0, 0),
+    makeNode('B', 1, 0),
+    makeNode('C', 2, 0),
+    makeNode('D', 3, 0),
+  ];
   const edges = [
     { id: 'AB', source: 'A', target: 'B', weight: 1 },
     { id: 'BC', source: 'B', target: 'C', weight: 2 },
@@ -71,6 +80,51 @@ runTest('aStar matches the optimal path on non-negative weights', () => {
 
   assert.deepEqual(lastPath(steps), ['A', 'B', 'C', 'D']);
   assert.match(lastMessage(steps), /Cost: 4/);
+});
+
+runTest('aStar zero heuristic behaves like cost-only A* and reports zero h values', () => {
+  const nodes = [
+    makeNode('A', 0, 0),
+    makeNode('B', 1, 0),
+    makeNode('C', 0, 1),
+    makeNode('D', 2, 0),
+  ];
+  const edges = [
+    { id: 'AB', source: 'A', target: 'B', weight: 1 },
+    { id: 'BD', source: 'B', target: 'D', weight: 1 },
+    { id: 'AC', source: 'A', target: 'C', weight: 2 },
+    { id: 'CD', source: 'C', target: 'D', weight: 2.2 },
+  ];
+
+  const steps = aStar(nodes, edges, 'A', 'D', 'zero');
+  const scoreMessages = messagesByKey(steps, 'algorithmSteps.aStarScoreState');
+
+  assert.deepEqual(lastPath(steps), ['A', 'B', 'D']);
+  assert.ok(scoreMessages.length > 0);
+  assert.ok(scoreMessages.every(message => message.includes('h(n) = 0.00')));
+  assert.match(lastMessage(steps), /zero/);
+});
+
+runTest('aStar euclidean heuristic reports non-zero h values and keeps the shortest path correct', () => {
+  const nodes = [
+    makeNode('A', 0, 0),
+    makeNode('B', 1, 0),
+    makeNode('C', 0, 1),
+    makeNode('D', 2, 0),
+  ];
+  const edges = [
+    { id: 'AB', source: 'A', target: 'B', weight: 1 },
+    { id: 'BD', source: 'B', target: 'D', weight: 1 },
+    { id: 'AC', source: 'A', target: 'C', weight: 2 },
+    { id: 'CD', source: 'C', target: 'D', weight: 2.2 },
+  ];
+
+  const steps = aStar(nodes, edges, 'A', 'D', 'euclidean');
+  const scoreMessages = messagesByKey(steps, 'algorithmSteps.aStarScoreState');
+
+  assert.deepEqual(lastPath(steps), ['A', 'B', 'D']);
+  assert.ok(scoreMessages.some(message => !message.includes('h(n) = 0.00')));
+  assert.match(lastMessage(steps), /euclidean/);
 });
 
 runTest('bfs and dfs report the expected traversal order on a simple chain', () => {
@@ -142,6 +196,29 @@ runTest('floydWarshall reports the expected all-pairs shortest paths on a positi
   assert.ok(messages.includes('A\t0\t3\t7'));
 });
 
+runTest('floydWarshall emits working matrix snapshots and update context', () => {
+  const nodes = [makeNode('A'), makeNode('B'), makeNode('C')];
+  const edges = [
+    { id: 'AB', source: 'A', target: 'B', weight: 3 },
+    { id: 'BC', source: 'B', target: 'C', weight: 4 },
+    { id: 'AC', source: 'A', target: 'C', weight: 10 },
+  ];
+
+  const steps = floydWarshall(
+    nodes,
+    edges.map(edge => ({ ...edge, directed: true }))
+  );
+  const updateStep = steps.find(step => step.type === 'update-matrix-cell');
+
+  assert.ok(updateStep);
+  assert.ok(Array.isArray(updateStep.matrixSnapshot));
+  assert.equal(updateStep.matrixCell?.row, 0);
+  assert.equal(updateStep.matrixCell?.col, 2);
+  assert.equal(updateStep.matrixCell?.value, 7);
+  assert.deepEqual(updateStep.matrixContext, { k: 1, i: 0, j: 2, viaNodeId: 'B' });
+  assert.deepEqual(updateStep.matrixSnapshot?.[0], [0, 3, 7]);
+});
+
 runTest('floydWarshall marks distances touched by negative cycles as -inf', () => {
   const nodes = [makeNode('A'), makeNode('B'), makeNode('C')];
   const edges = [
@@ -175,8 +252,46 @@ runTest('kruskal and prim agree on the MST total weight', () => {
     { id: 'CD', source: 'C', target: 'D', weight: 1 },
   ];
 
-  assert.match(lastMessage(kruskal(nodes, edges)), /Total MST weight: 4/);
-  assert.match(lastMessage(prim(nodes, edges, 'A')), /Total MST weight: 4/);
+  assert.match(lastMessage(kruskal(nodes, edges)), /Final MST/);
+  assert.match(lastMessage(prim(nodes, edges, 'A')), /Final MST/);
+});
+
+runTest('kruskal emits final MST edge metadata', () => {
+  const nodes = [makeNode('A'), makeNode('B'), makeNode('C'), makeNode('D')];
+  const edges = [
+    { id: 'AB', source: 'A', target: 'B', weight: 1 },
+    { id: 'AC', source: 'A', target: 'C', weight: 4 },
+    { id: 'BC', source: 'B', target: 'C', weight: 2 },
+    { id: 'BD', source: 'B', target: 'D', weight: 5 },
+    { id: 'CD', source: 'C', target: 'D', weight: 1 },
+  ];
+
+  const steps = kruskal(nodes, edges);
+  const finalStep = steps.find(step => step.mstEdges?.length);
+
+  assert.ok(finalStep);
+  assert.deepEqual(finalStep.mstEdges, ['AB', 'CD', 'BC']);
+  assert.equal(finalStep.totalWeight, 4);
+  assert.match(renderStepMessage(finalStep), /Final MST/);
+});
+
+runTest('prim emits final MST edge metadata', () => {
+  const nodes = [makeNode('A'), makeNode('B'), makeNode('C'), makeNode('D')];
+  const edges = [
+    { id: 'AB', source: 'A', target: 'B', weight: 1 },
+    { id: 'AC', source: 'A', target: 'C', weight: 4 },
+    { id: 'BC', source: 'B', target: 'C', weight: 2 },
+    { id: 'BD', source: 'B', target: 'D', weight: 5 },
+    { id: 'CD', source: 'C', target: 'D', weight: 1 },
+  ];
+
+  const steps = prim(nodes, edges, 'A');
+  const finalStep = steps.find(step => step.mstEdges?.length);
+
+  assert.ok(finalStep);
+  assert.deepEqual(finalStep.mstEdges, ['AB', 'BC', 'CD']);
+  assert.equal(finalStep.totalWeight, 4);
+  assert.match(renderStepMessage(finalStep), /Final MST/);
 });
 
 runTest('mixed directed and undirected edges are respected per edge', () => {

@@ -22,7 +22,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Slider } from '@/components/ui/slider';
 import { toast } from '@/hooks/use-toast';
-import type { AlgorithmType, Edge, Node } from '@/types/graph';
+import type { AStarHeuristicMode, AlgorithmType, Edge, Node } from '@/types/graph';
 import {
   CircleDot,
   FileJson,
@@ -50,7 +50,12 @@ interface ControlsPanelProps {
   edges: Edge[];
   hasDirectedEdges: boolean;
   onAddNode: () => void;
-  onRunAlgorithm: (algorithm: AlgorithmType, startNode?: string, endNode?: string) => void;
+  onRunAlgorithm: (
+    algorithm: AlgorithmType,
+    startNode?: string,
+    endNode?: string,
+    heuristicMode?: AStarHeuristicMode
+  ) => void;
   onClearGraph: () => void;
   startNode: string | null;
   setStartNode: (nodeId: string | null) => void;
@@ -58,6 +63,8 @@ interface ControlsPanelProps {
   setEndNode: (nodeId: string | null) => void;
   animationSpeed: number;
   onAnimationSpeedChange: (speed: number) => void;
+  aStarHeuristicMode: AStarHeuristicMode;
+  onAStarHeuristicModeChange: (mode: AStarHeuristicMode) => void;
   onDrawSuggestedGraph: (suggestionType: string, customData?: { nodeCount?: number; graphType?: string }) => void;
   onGenerateFromMatrix: (matrixString: string) => void;
   onGenerateFromJSON: (jsonString: string) => void;
@@ -130,6 +137,8 @@ export function ControlsPanel({
   setEndNode,
   animationSpeed,
   onAnimationSpeedChange,
+  aStarHeuristicMode,
+  onAStarHeuristicModeChange,
   onDrawSuggestedGraph,
   onGenerateFromMatrix,
   onGenerateFromJSON,
@@ -199,7 +208,12 @@ export function ControlsPanel({
       return;
     }
 
-    onRunAlgorithm(selectedAlgorithm.value, startNode, endNode);
+    onRunAlgorithm(
+      selectedAlgorithm.value,
+      startNode,
+      endNode,
+      selectedAlgorithm.value === 'a-star' ? aStarHeuristicMode : undefined
+    );
   };
 
   useEffect(() => {
@@ -468,6 +482,37 @@ export function ControlsPanel({
                 <div className="p-2 mt-1.5 border rounded-md bg-muted/20 text-center">
                   <p className="text-xs text-muted-foreground">
                     {t('controls.selectedAlgorithm')} <span className="font-semibold text-primary">{selectedAlgorithm.label}</span>
+                  </p>
+                </div>
+              )}
+
+              {selectedAlgorithm?.value === 'a-star' && (
+                <div className="mt-1.5 space-y-2 rounded-md border bg-muted/20 p-2">
+                  <Label htmlFor="astar-heuristic-mode" className="text-xs sm:text-sm">
+                    {t('controls.aStarMode')}
+                  </Label>
+                  <Select
+                    value={aStarHeuristicMode}
+                    onValueChange={value => onAStarHeuristicModeChange(value as AStarHeuristicMode)}
+                  >
+                    <SelectTrigger
+                      id="astar-heuristic-mode"
+                      aria-label={t('controls.aStarMode')}
+                      className="text-xs sm:text-sm"
+                    >
+                      <SelectValue placeholder={t('controls.aStarMode')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="euclidean" className="text-xs sm:text-sm">
+                        {t('controls.aStarModeEuclidean')}
+                      </SelectItem>
+                      <SelectItem value="zero" className="text-xs sm:text-sm">
+                        {t('controls.aStarModeZero')}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-[11px] leading-4 text-muted-foreground">
+                    {t('controls.aStarModeHint')}
                   </p>
                 </div>
               )}

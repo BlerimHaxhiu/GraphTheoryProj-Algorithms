@@ -13,13 +13,15 @@ import { AlgorithmExplanationPanel } from '@/components/graph/AlgorithmExplanati
 import { ExecutionHistoryPanel } from '@/components/graph/ExecutionHistoryPanel';
 import { CompareAlgorithmsPanel } from '@/components/graph/CompareAlgorithmsPanel';
 import { ExportPanel } from '@/components/graph/ExportPanel';
+import { PlaybackControls } from '@/components/graph/PlaybackControls';
 import { FullscreenSection } from '@/components/ui/fullscreen-section';
 import { GraphChatbot } from '@/components/chatbot/GraphChatbot';
 import { PrintableGraphReport } from '@/components/graph/PrintableGraphReport';
 
-import type { Node, Edge, AlgorithmStep, AlgorithmType, ExecutionLogEntry } from '@/types/graph';
+import type { Node, Edge, AlgorithmStep, AlgorithmType, ExecutionLogEntry, AStarHeuristicMode } from '@/types/graph';
 import { generateNodeId, getNextNodeLabel, buildAdjacencyMatrix, generateEdgeId, graphHasDirectedEdges, hasNegativeEdgeWeights, normalizeEdge, serializeGraphPayload } from '@/lib/graph-utils';
 import { dijkstra, bfs, dfs, aStar, bellmanFord, floydWarshall, kruskal, prim } from '@/lib/graph-algorithms';
+import { buildPlaybackReportLog, clampStepIndex } from '@/lib/playback-utils';
 import { useToast } from '@/hooks/use-toast';
 import { useLanguage } from '@/hooks/use-language';
 import { Card } from '@/components/ui/card';
@@ -151,8 +153,19 @@ function GraphAppPageContent() {
   const [edges, setEdges] = useState<Edge[]>([]);
   const [currentAlgorithmStep, setCurrentAlgorithmStep] = useState<AlgorithmStep | null>(null);
   const [algorithmStepsQueue, setAlgorithmStepsQueue] = useState<AlgorithmStep[]>([]);
+  const [algorithmStepsHistory, setAlgorithmStepsHistory] = useState<AlgorithmStep[]>([]);
+  const [currentStepIndex, setCurrentStepIndex] = useState<number>(-1);
+  const [playbackIntroStep, setPlaybackIntroStep] = useState<AlgorithmStep | null>(null);
+  const [playbackCompletionStep, setPlaybackCompletionStep] = useState<AlgorithmStep | null>(null);
+  const [isPlaybackRunning, setIsPlaybackRunning] = useState(false);
+  const [isPlaybackPaused, setIsPlaybackPaused] = useState(false);
+  const [isPlaybackFinished, setIsPlaybackFinished] = useState(false);
   const [algorithmReportLog, setAlgorithmReportLog] = useState<AlgorithmStep[]>([]);
   const algorithmReportLogRef = useRef(algorithmReportLog);
+  const algorithmStepsHistoryRef = useRef<AlgorithmStep[]>([]);
+  const playbackIntroStepRef = useRef<AlgorithmStep | null>(null);
+  const playbackCompletionStepRef = useRef<AlgorithmStep | null>(null);
+  const currentStepIndexRef = useRef<number>(-1);
   const stepIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [executionHistory, setExecutionHistory] = useState<ExecutionLogEntry[]>([]);
   const [lastExecutedAlgorithm, setLastExecutedAlgorithm] = useState<AlgorithmType | null>(null);
@@ -173,19 +186,51 @@ function GraphAppPageContent() {
     }
   }, []);
 
-  const resetExecutionState = useCallback(() => {
+  const clearCurrentRun = useCallback(() => {
     clearStepInterval();
     setCurrentAlgorithmStep(null);
     setAlgorithmStepsQueue([]);
+    setAlgorithmStepsHistory([]);
+    algorithmStepsHistoryRef.current = [];
+    setCurrentStepIndex(-1);
+    currentStepIndexRef.current = -1;
+    setPlaybackIntroStep(null);
+    playbackIntroStepRef.current = null;
+    setPlaybackCompletionStep(null);
+    playbackCompletionStepRef.current = null;
+    setIsPlaybackRunning(false);
+    setIsPlaybackPaused(false);
+    setIsPlaybackFinished(false);
     setAlgorithmReportLog([]);
-    setStartNode(null);
-    setEndNode(null);
+    algorithmReportLogRef.current = [];
     setLastExecutedAlgorithm(null);
   }, [clearStepInterval]);
+
+  const resetExecutionState = useCallback(() => {
+    clearCurrentRun();
+    setStartNode(null);
+    setEndNode(null);
+  }, [clearCurrentRun]);
 
   useEffect(() => {
     algorithmReportLogRef.current = algorithmReportLog;
   }, [algorithmReportLog]);
+
+  useEffect(() => {
+    algorithmStepsHistoryRef.current = algorithmStepsHistory;
+  }, [algorithmStepsHistory]);
+
+  useEffect(() => {
+    playbackIntroStepRef.current = playbackIntroStep;
+  }, [playbackIntroStep]);
+
+  useEffect(() => {
+    playbackCompletionStepRef.current = playbackCompletionStep;
+  }, [playbackCompletionStep]);
+
+  useEffect(() => {
+    currentStepIndexRef.current = currentStepIndex;
+  }, [currentStepIndex]);
 
   useEffect(() => {
     const savedGraph = localStorage.getItem('grafiShqipGraph');
@@ -220,6 +265,7 @@ function GraphAppPageContent() {
   const [startNode, setStartNode] = useState<string | null>(null);
   const [endNode, setEndNode] = useState<string | null>(null);
   const [animationSpeed, setAnimationSpeed] = useState<number>(1000);
+  const [aStarHeuristicMode, setAStarHeuristicMode] = useState<AStarHeuristicMode>('euclidean');
   const hasDirectedEdges = useMemo(() => graphHasDirectedEdges(edges), [edges]);
 
   const adjacencyMatrix = useMemo(() => {
@@ -229,6 +275,7 @@ function GraphAppPageContent() {
   const svgRef = useRef<SVGSVGElement>(null);
 
   const handleAddNode = useCallback((clickX?: number, clickY?: number) => {
+    clearCurrentRun();
     const canvasWidth = svgRef.current?.viewBox.baseVal.width ?? 800;
     const canvasHeight = svgRef.current?.viewBox.baseVal.height ?? 600;
 
@@ -260,10 +307,11 @@ function GraphAppPageContent() {
     };
     setNodes(prevNodes => [...prevNodes, newNode]);
     toast({ title: t('messages.nodeAdded'), description: t('messages.nodeCreated', { label: newNode.label }), variant: 'default' });
-  }, [nodes, svgRef, toast]);
+  }, [clearCurrentRun, nodes, svgRef, toast]);
 
 
   const handleDeleteNode = (nodeIdToDelete: string) => {
+    clearCurrentRun();
     const nodeToDelete = nodes.find(n => n.id === nodeIdToDelete);
     setNodes(prevNodes => prevNodes.filter(node => node.id !== nodeIdToDelete));
     setEdges(prevEdges => prevEdges.filter(edge => edge.source !== nodeIdToDelete && edge.target !== nodeIdToDelete));
@@ -272,55 +320,68 @@ function GraphAppPageContent() {
     toast({ title: t('messages.nodeDeleted'), description: t('messages.nodeDeletedDescription', { label: nodeToDelete?.label ?? nodeIdToDelete }), variant: 'default' });
   };
 
+  const handleNodesChange = useCallback((nextNodes: Node[]) => {
+    clearCurrentRun();
+    setNodes(nextNodes);
+  }, [clearCurrentRun]);
+
+  const handleEdgesChange = useCallback((nextEdges: Edge[]) => {
+    clearCurrentRun();
+    setEdges(nextEdges);
+  }, [clearCurrentRun]);
+
+  const applyPlaybackPosition = useCallback((requestedIndex: number, completionStep?: AlgorithmStep | null) => {
+    const steps = algorithmStepsHistoryRef.current;
+    const nextIndex = clampStepIndex(requestedIndex, steps.length);
+    const nextStep = completionStep ?? (nextIndex >= 0 ? steps[nextIndex] : null);
+    const nextReportLog = buildPlaybackReportLog(playbackIntroStepRef.current, steps, nextIndex, completionStep);
+
+    currentStepIndexRef.current = nextIndex;
+    setCurrentStepIndex(nextIndex);
+    setCurrentAlgorithmStep(nextStep);
+    setAlgorithmReportLog(nextReportLog);
+    algorithmReportLogRef.current = nextReportLog;
+    setAlgorithmStepsQueue(nextIndex >= 0 ? steps.slice(nextIndex + 1) : steps);
+  }, []);
+
+  const finishPlayback = useCallback(() => {
+    clearStepInterval();
+
+    const completionStep =
+      playbackCompletionStepRef.current ??
+      { id: `step-completion-${Date.now()}-${Math.random()}`, type: 'message' as const, messageKey: 'messages.algorithmComplete' };
+
+    playbackCompletionStepRef.current = completionStep;
+    setPlaybackCompletionStep(completionStep);
+    applyPlaybackPosition(currentStepIndexRef.current, completionStep);
+    setAlgorithmStepsQueue([]);
+    setIsPlaybackRunning(false);
+    setIsPlaybackPaused(false);
+    setIsPlaybackFinished(true);
+  }, [applyPlaybackPosition, clearStepInterval]);
+
   const processAlgorithmStep = useCallback(() => {
-    setAlgorithmStepsQueue(prevQueue => {
-      if (prevQueue.length === 0) {
-        clearStepInterval();
+    const steps = algorithmStepsHistoryRef.current;
+    if (steps.length === 0) {
+      finishPlayback();
+      return;
+    }
 
-        const alreadyLoggedCompletion = algorithmReportLogRef.current.some(
-          log => log.type === 'message' && log.messageKey === 'messages.algorithmComplete'
-        );
+    const nextIndex = currentStepIndexRef.current + 1;
+    if (nextIndex >= steps.length) {
+      finishPlayback();
+      return;
+    }
 
-        if (!alreadyLoggedCompletion) {
-          const newCompletionStep = { id: `step-completion-${Date.now()}-${Math.random()}`, type: 'message' as const, messageKey: 'messages.algorithmComplete' };
-          setAlgorithmReportLog(prevLog => {
-            const lastEntryIsCompletion = prevLog.length > 0 &&
-                                        prevLog[prevLog.length - 1].type === 'message' &&
-                                        prevLog[prevLog.length - 1].messageKey === 'messages.algorithmComplete';
-            if (lastEntryIsCompletion) return prevLog;
-            return [...prevLog, newCompletionStep];
-          });
-          setCurrentAlgorithmStep(newCompletionStep);
-        } else {
-           const lastStep = algorithmReportLogRef.current[algorithmReportLogRef.current.length -1];
-           if(lastStep && lastStep.type === 'message' && lastStep.messageKey === 'messages.algorithmComplete') {
-             setCurrentAlgorithmStep(lastStep);
-           } else {
-             setCurrentAlgorithmStep(null);
-           }
-        }
-        return [];
-      }
+    applyPlaybackPosition(nextIndex);
+  }, [applyPlaybackPosition, finishPlayback]);
 
-      const [nextStepFromQueue, ...restOfQueue] = prevQueue;
-       if (!nextStepFromQueue) return restOfQueue;
-
-      const nextStep = { ...nextStepFromQueue, id: nextStepFromQueue.id || `step-runtime-${Date.now()}-${Math.random()}` };
-
-      setCurrentAlgorithmStep(nextStep);
-
-      setAlgorithmReportLog(prevLog => {
-        const isDuplicate = prevLog.length > 0 && prevLog[prevLog.length - 1].id === nextStep.id && prevLog[prevLog.length - 1].type === nextStep.type;
-        if (isDuplicate) {
-          return prevLog;
-        }
-        return [...prevLog, nextStep];
-      });
-      return restOfQueue;
-    });
-  }, [clearStepInterval]);
-
-  const runAlgorithm = (algorithm: AlgorithmType, selectedStartNode?: string, selectedEndNode?: string) => {
+  const runAlgorithm = (
+    algorithm: AlgorithmType,
+    selectedStartNode?: string,
+    selectedEndNode?: string,
+    heuristicMode?: AStarHeuristicMode
+  ) => {
     const opStartTime = performance.now();
     const entryStartTime = new Date();
     setLastExecutedAlgorithm(algorithm);
@@ -329,14 +390,29 @@ function GraphAppPageContent() {
     clearStepInterval();
     const initialResetStepId = `step-reset-${Date.now()}-${Math.random()}`;
     const initialMessageStepId = `step-initial-msg-${Date.now()}-${Math.random()}`;
+    const initialReportStep = { type: 'message' as const, id: initialMessageStepId, messageKey: 'messages.algorithmStart', messageValues: { algorithm: algorithm.toUpperCase() } };
 
     setCurrentAlgorithmStep({ type: 'reset', id: initialResetStepId, messageKey: 'messages.preparingAlgorithm' });
-    setAlgorithmReportLog([{ type: 'message', id: initialMessageStepId, messageKey: 'messages.algorithmStart', messageValues: { algorithm: algorithm.toUpperCase() } }]);
+    setAlgorithmReportLog([initialReportStep]);
+    algorithmReportLogRef.current = [initialReportStep];
+    setAlgorithmStepsQueue([]);
+    setAlgorithmStepsHistory([]);
+    algorithmStepsHistoryRef.current = [];
+    setCurrentStepIndex(-1);
+    currentStepIndexRef.current = -1;
+    setPlaybackIntroStep(initialReportStep);
+    playbackIntroStepRef.current = initialReportStep;
+    setPlaybackCompletionStep(null);
+    playbackCompletionStepRef.current = null;
+    setIsPlaybackRunning(false);
+    setIsPlaybackPaused(false);
+    setIsPlaybackFinished(false);
 
     let steps: AlgorithmStep[] = [];
     const sNode = selectedStartNode || startNode;
     const eNode = selectedEndNode || endNode;
     const nodeMap = new Map(nodes.map(n => [n.id, n.label]));
+    const selectedAStarMode = heuristicMode ?? aStarHeuristicMode;
 
 
     const algorithmNeedsStartNode = ['dijkstra', 'bfs', 'dfs', 'a-star', 'bellman-ford', 'prim'].includes(algorithm);
@@ -384,7 +460,7 @@ function GraphAppPageContent() {
         steps = dfs(nodes, edges, sNode!);
         break;
       case 'a-star':
-        steps = aStar(nodes, edges, sNode!, eNode!);
+        steps = aStar(nodes, edges, sNode!, eNode!, selectedAStarMode);
         break;
       case 'bellman-ford':
         steps = bellmanFord(nodes, edges, sNode!);
@@ -409,11 +485,24 @@ function GraphAppPageContent() {
 
     const validSteps = steps.filter(step => step && step.id);
     setAlgorithmStepsQueue(validSteps);
+    setAlgorithmStepsHistory(validSteps);
+    algorithmStepsHistoryRef.current = validSteps;
+    setCurrentStepIndex(-1);
+    currentStepIndexRef.current = -1;
 
     let resultSummary = t('messages.algorithmComplete');
     if (validSteps.length > 0) {
         const lastStep = validSteps[validSteps.length - 1];
-        if (lastStep.type === 'message') {
+        if (lastStep.mstEdges?.length) {
+            const mstLabels = lastStep.mstEdges
+              .map(edgeId => {
+                const edge = edges.find(candidate => candidate.id === edgeId);
+                if (!edge) return edgeId;
+                return `${nodeMap.get(edge.source) || edge.source}-${nodeMap.get(edge.target) || edge.target}`;
+              })
+              .join(', ');
+            resultSummary = t('algorithmSteps.mstSummary', { edges: mstLabels || '-', weight: lastStep.totalWeight ?? 0 });
+        } else if (lastStep.type === 'message') {
             resultSummary = lastStep.messageKey ? t(lastStep.messageKey, lastStep.messageValues) : lastStep.message || resultSummary;
         } else if (lastStep.type === 'highlight-path' && lastStep.path) {
              resultSummary = t('messages.pathSummary', { path: lastStep.path.map(id => nodeMap.get(id) || id).join(' -> ') });
@@ -434,20 +523,67 @@ function GraphAppPageContent() {
         edgesCountSnapshot: edges.length,
         startNodeLabel: sNode ? nodeMap.get(sNode) : undefined,
         endNodeLabel: eNode ? nodeMap.get(eNode) : undefined,
+        heuristicMode: algorithm === 'a-star' ? selectedAStarMode : undefined,
         resultSummary,
       }
     ]);
 
 
     if (validSteps.length > 0) {
+        setIsPlaybackRunning(true);
+        setIsPlaybackPaused(false);
+        setIsPlaybackFinished(false);
         processAlgorithmStep();
         stepIntervalRef.current = setInterval(processAlgorithmStep, animationSpeed);
     } else {
         const noStepsMsgId = `step-nosteps-${Date.now()}-${Math.random()}`;
         setCurrentAlgorithmStep({ type: 'message', id: noStepsMsgId, messageKey: 'messages.algorithmNoStepsDetailed' });
         setAlgorithmReportLog(prev => [...prev, { type: 'message', id: noStepsMsgId, messageKey: 'messages.algorithmNoStepsDetailed'}]);
+        setIsPlaybackRunning(false);
+        setIsPlaybackPaused(false);
+        setIsPlaybackFinished(true);
     }
   };
+
+  const handlePausePlayback = useCallback(() => {
+    if (!isPlaybackRunning) return;
+    clearStepInterval();
+    setIsPlaybackRunning(false);
+    setIsPlaybackPaused(true);
+  }, [clearStepInterval, isPlaybackRunning]);
+
+  const handleResumePlayback = useCallback(() => {
+    if (!isPlaybackPaused || isPlaybackFinished || algorithmStepsHistoryRef.current.length === 0) return;
+    clearStepInterval();
+    setIsPlaybackRunning(true);
+    setIsPlaybackPaused(false);
+    setIsPlaybackFinished(false);
+    stepIntervalRef.current = setInterval(processAlgorithmStep, animationSpeed);
+  }, [animationSpeed, clearStepInterval, isPlaybackFinished, isPlaybackPaused, processAlgorithmStep]);
+
+  const handleNextPlaybackStep = useCallback(() => {
+    if (isPlaybackRunning || isPlaybackFinished) return;
+    setIsPlaybackPaused(true);
+    processAlgorithmStep();
+  }, [isPlaybackFinished, isPlaybackRunning, processAlgorithmStep]);
+
+  const handlePreviousPlaybackStep = useCallback(() => {
+    if (isPlaybackRunning || algorithmStepsHistoryRef.current.length === 0) return;
+    const previousIndex = currentStepIndexRef.current - 1;
+    if (previousIndex < 0) return;
+
+    clearStepInterval();
+    playbackCompletionStepRef.current = null;
+    setPlaybackCompletionStep(null);
+    setIsPlaybackRunning(false);
+    setIsPlaybackPaused(true);
+    setIsPlaybackFinished(false);
+    applyPlaybackPosition(previousIndex);
+  }, [applyPlaybackPosition, clearStepInterval, isPlaybackRunning]);
+
+  const handleResetCurrentRun = useCallback(() => {
+    clearCurrentRun();
+  }, [clearCurrentRun]);
 
   useEffect(() => {
     return () => {
@@ -968,6 +1104,7 @@ function GraphAppPageContent() {
     }
   }, [resetExecutionState, toast]);
 
+  const hasPlaybackRun = algorithmStepsHistory.length > 0 || algorithmReportLog.length > 0;
 
   return (
      <div className="flex flex-col h-screen text-foreground bg-background overflow-hidden">
@@ -995,6 +1132,8 @@ function GraphAppPageContent() {
                 onDrawSuggestedGraph={handleDrawSuggestedGraph}
                 onGenerateFromMatrix={handleGenerateFromMatrix}
                 onGenerateFromJSON={handleGenerateFromJSON}
+                aStarHeuristicMode={aStarHeuristicMode}
+                onAStarHeuristicModeChange={setAStarHeuristicMode}
               />
           </aside>
         </FullscreenSection>
@@ -1011,8 +1150,8 @@ function GraphAppPageContent() {
                   svgRef={svgRef}
                   nodes={nodes}
                   edges={edges}
-                  onNodesChange={setNodes}
-                  onEdgesChange={setEdges}
+                  onNodesChange={handleNodesChange}
+                  onEdgesChange={handleEdgesChange}
                   currentAlgorithmStep={currentAlgorithmStep}
                   startNode={startNode}
                   endNode={endNode}
@@ -1039,11 +1178,28 @@ function GraphAppPageContent() {
               onToggle={() => toggleFullscreen('report')}
               className="min-h-[250px]"
             >
-              <AlgorithmReportPanel
-                reportLog={algorithmReportLog}
-                nodes={nodes}
-                edges={edges}
-              />
+              <div className="flex h-full flex-col gap-2">
+                <PlaybackControls
+                  hasRun={hasPlaybackRun}
+                  isRunning={isPlaybackRunning}
+                  isPaused={isPlaybackPaused}
+                  isFinished={isPlaybackFinished}
+                  currentStepIndex={currentStepIndex}
+                  totalSteps={algorithmStepsHistory.length}
+                  onPause={handlePausePlayback}
+                  onResume={handleResumePlayback}
+                  onNextStep={handleNextPlaybackStep}
+                  onPreviousStep={handlePreviousPlaybackStep}
+                  onResetRun={handleResetCurrentRun}
+                />
+                <div className="min-h-0 flex-1">
+                  <AlgorithmReportPanel
+                    reportLog={algorithmReportLog}
+                    nodes={nodes}
+                    edges={edges}
+                  />
+                </div>
+              </div>
             </FullscreenSection>
           </div>
 
@@ -1107,7 +1263,8 @@ function GraphAppPageContent() {
           endNodeId: endNode,
           setStartNodeId: setStartNode,
           setEndNodeId: setEndNode,
-          runAlgorithm: (algorithm, startId, endId) => runAlgorithm(algorithm, startId, endId),
+          runAlgorithm: (algorithm, startId, endId, heuristicMode) =>
+            runAlgorithm(algorithm, startId, endId, heuristicMode),
           clearResult: resetExecutionState,
         }}
       />

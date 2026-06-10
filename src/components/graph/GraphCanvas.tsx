@@ -875,6 +875,8 @@ export function GraphCanvas({
   let highlightedEdges = new Set<string>();
   let currentPathNodes = new Set<string>();
   let currentPathEdges = new Set<string>();
+  let currentMstEdges = new Set<string>();
+  let currentMstNodes = new Set<string>();
 
   if (currentAlgorithmStep) {
     if (currentAlgorithmStep.type === 'visit-node' && currentAlgorithmStep.nodeId) {
@@ -896,6 +898,16 @@ export function GraphCanvas({
         const edge = findPathEdge(edges, currentAlgorithmStep.path[i], currentAlgorithmStep.path[i + 1]);
         if (edge) currentPathEdges.add(edge.id);
       }
+    }
+    if (currentAlgorithmStep.mstEdges?.length) {
+      currentAlgorithmStep.mstEdges.forEach(edgeId => {
+        currentMstEdges.add(edgeId);
+        const edge = edges.find(candidate => candidate.id === edgeId);
+        if (edge) {
+          currentMstNodes.add(edge.source);
+          currentMstNodes.add(edge.target);
+        }
+      });
     }
   }
 
@@ -961,13 +973,18 @@ export function GraphCanvas({
           const geometry = getPathGeometry(sourceNode, targetNode, normalizedEdge, pairIndex >= 0 ? pairIndex : edgeIndex);
           const isHighlighted = highlightedEdges.has(edge.id);
           const isCurrentPath = currentPathEdges.has(edge.id);
+          const isMstEdge = currentMstEdges.has(edge.id);
           const isSelected = edge.id === selectedEdgeId;
 
           let stroke = 'hsl(var(--muted-foreground))';
           let edgeTextFill = 'hsl(var(--foreground))';
           let markerId = 'arrowhead';
 
-          if (isCurrentPath) {
+          if (isMstEdge) {
+            stroke = 'hsl(var(--primary))';
+            edgeTextFill = 'hsl(var(--primary))';
+            markerId = 'arrowhead-primary';
+          } else if (isCurrentPath) {
             stroke = 'hsl(var(--accent))';
             edgeTextFill = 'hsl(var(--accent))';
             markerId = 'arrowhead-highlight';
@@ -981,7 +998,7 @@ export function GraphCanvas({
             markerId = 'arrowhead-ring';
           }
 
-          const strokeWidth = isCurrentPath || isHighlighted || isSelected ? 2.5 : 1.5;
+          const strokeWidth = isMstEdge || isCurrentPath || isHighlighted || isSelected ? 2.5 : 1.5;
           const labelValue = String(normalizedEdge.weight);
           const labelWidth = Math.max(EDGE_LABEL_MIN_WIDTH, labelValue.length * EDGE_LABEL_CHAR_WIDTH + 12);
 
@@ -1085,6 +1102,7 @@ export function GraphCanvas({
         {nodes.map(node => {
           const isAlgorithmVisitNode = highlightedNodes.has(node.id) && (currentAlgorithmStep?.type === 'visit-node' || currentAlgorithmStep?.type === 'traverse-edge');
           const isPathNode = currentPathNodes.has(node.id);
+          const isMstNode = currentMstNodes.has(node.id);
           const isStart = node.id === startNode;
           const isEnd = node.id === endNode;
           const isSelected = node.id === selectedNodeId;
@@ -1094,7 +1112,11 @@ export function GraphCanvas({
           let nodeStroke = 'hsl(var(--foreground))';
           let nodeStrokeWidth = 1.5;
 
-          if (isPathNode) {
+          if (isMstNode) {
+            nodeFill = 'hsl(var(--primary)/0.18)';
+            nodeStroke = 'hsl(var(--primary))';
+            nodeStrokeWidth = 2.75;
+          } else if (isPathNode) {
             nodeFill = 'hsl(var(--accent))';
             nodeStroke = 'hsl(var(--accent))';
             nodeStrokeWidth = 2.5;
@@ -1105,18 +1127,18 @@ export function GraphCanvas({
           }
 
           if (isStart) {
-            if (!isPathNode && !isAlgorithmVisitNode) nodeFill = 'hsl(var(--accent)/0.3)';
-            nodeStroke = 'hsl(var(--accent))';
+            if (!isPathNode && !isMstNode && !isAlgorithmVisitNode) nodeFill = 'hsl(var(--accent)/0.3)';
+            if (!isMstNode) nodeStroke = 'hsl(var(--accent))';
             nodeStrokeWidth = Math.max(nodeStrokeWidth, 2.5);
           }
 
           if (isEnd) {
-            if (!isPathNode && !isAlgorithmVisitNode) nodeFill = 'hsl(var(--destructive)/0.3)';
-            nodeStroke = 'hsl(var(--destructive))';
+            if (!isPathNode && !isMstNode && !isAlgorithmVisitNode) nodeFill = 'hsl(var(--destructive)/0.3)';
+            if (!isMstNode) nodeStroke = 'hsl(var(--destructive))';
             nodeStrokeWidth = Math.max(nodeStrokeWidth, 2.5);
           }
 
-          if (isSelected && !isPathNode && !isAlgorithmVisitNode && !isStart && !isEnd) {
+          if (isSelected && !isPathNode && !isMstNode && !isAlgorithmVisitNode && !isStart && !isEnd) {
             nodeStroke = 'hsl(var(--ring))';
             nodeStrokeWidth = 2.75;
             nodeFill = 'hsl(var(--ring)/0.12)';

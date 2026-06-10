@@ -1,5 +1,6 @@
 import type { AlgorithmStep, AlgorithmType, Edge, Node } from '@/types/graph';
 import type { AppLanguage } from '@/components/language-provider';
+import { generateMentorResponse } from './mentor/mentor-engine';
 
 export interface ChatbotContext {
   language: AppLanguage;
@@ -490,7 +491,15 @@ export function generateChatbotResponse(question: string, ctx: ChatbotContext): 
   const lang = pickLanguage(trimmed, ctx.language);
   const q = trimmed.toLowerCase();
 
-  if (/(hello|hi|hey|pershendetje|hello bot|hej)/.test(q)) {
+  // Algorithm Mentor: deterministic recommendation / why / comparison /
+  // graph-aware / step-why intents. Evaluated before the generic keyword
+  // handlers (which match loosely, e.g. greeting on the "hi" inside "this").
+  // Returns null unless a mentor intent confidently matches, so every other
+  // question still flows through the existing handlers unchanged.
+  const mentorReply = generateMentorResponse(trimmed, ctx);
+  if (mentorReply) return mentorReply;
+
+  if (/\b(hello|hi|hey|pershendetje|hej)\b/.test(q)) {
     return lang === 'sq'
       ? `Pershendetje! Une jam asistenti i grafeve. ${describeContext(ctx, lang)}`
       : `Hello! I'm the graph assistant. ${describeContext(ctx, lang)}`;
@@ -566,7 +575,34 @@ export function generateChatbotResponse(question: string, ctx: ChatbotContext): 
   return fallback(lang, ctx);
 }
 
-export function getSuggestedQuestions(language: AppLanguage, selectedAlgorithm: AlgorithmType | null): string[] {
+export type ChatbotMode = 'assistant' | 'mentor';
+
+export function getSuggestedQuestions(
+  language: AppLanguage,
+  selectedAlgorithm: AlgorithmType | null,
+  mode: ChatbotMode = 'assistant'
+): string[] {
+  if (mode === 'mentor') {
+    if (language === 'sq') {
+      return [
+        'Cilin algoritem te perdor?',
+        'Cfare te perdor per kete graf?',
+        'Pse Dijkstra?',
+        'Krahaso A* dhe Dijkstra',
+        'Krahaso Kruskal dhe Prim',
+        'Cili algoritem per pesha negative?',
+      ];
+    }
+    return [
+      'Which algorithm should I use?',
+      'What should I use for this graph?',
+      'Why Dijkstra?',
+      'Compare A* and Dijkstra',
+      'Compare Kruskal and Prim',
+      'Which algorithm for negative weights?',
+    ];
+  }
+
   const algoLabel = selectedAlgorithm ? ALGORITHM_INFO[selectedAlgorithm].label : null;
   if (language === 'sq') {
     return [

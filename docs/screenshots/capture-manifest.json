@@ -1,0 +1,79 @@
+{
+  "baseUrl": "http://127.0.0.1:51166",
+  "mode": "static export (out/)",
+  "capturedAt": "2026-06-10T01:31:34.070Z",
+  "results": [
+    {
+      "file": "01-landing-page.png",
+      "ok": true,
+      "bytes": 241663,
+      "note": "landing / hero"
+    },
+    {
+      "file": "02-main-workspace.png",
+      "ok": true,
+      "bytes": 111516,
+      "note": "full workspace + seeded graph"
+    },
+    {
+      "file": "03-graph-editor.png",
+      "ok": true,
+      "bytes": 124890,
+      "note": "editor + algorithm controls"
+    },
+    {
+      "file": "04-dijkstra-run.png",
+      "ok": true,
+      "bytes": 143157,
+      "note": "Dijkstra shortest path A->F"
+    },
+    {
+      "file": "06-playback-controls.png",
+      "ok": true,
+      "bytes": 144004,
+      "note": "paused mid-run, step controls active"
+    },
+    {
+      "file": "05-astar-euclidean-mode.png",
+      "ok": true,
+      "bytes": 155651,
+      "note": "A* with Euclidean heuristic"
+    },
+    {
+      "file": "07-floyd-warshall-matrix.png",
+      "ok": true,
+      "bytes": 163841,
+      "note": "all-pairs distance matrix"
+    },
+    {
+      "file": "08-mst-visualization.png",
+      "ok": true,
+      "bytes": 143016,
+      "note": "Kruskal MST highlighted"
+    },
+    {
+      "file": "10-algorithm-comparison.png",
+      "ok": true,
+      "bytes": 193496,
+      "note": "comparison of recent runs"
+    },
+    {
+      "file": "09-algorithm-mentor.png",
+      "ok": true,
+      "bytes": 62773,
+      "note": "deterministic mentor Q&A"
+    },
+    {
+      "file": "12-printable-report.png",
+      "ok": true,
+      "bytes": 57727,
+      "note": "print media report"
+    },
+    {
+      "file": "11-albanian-language.png",
+      "ok": true,
+      "bytes": 145825,
+      "note": "Albanian UI (html lang=\"sq\")"
+    }
+  ]
+}

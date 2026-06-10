@@ -1,5 +1,6 @@
 import type { Node, Edge, AlgorithmStep } from '@/types/graph';
 import { normalizeEdge } from './graph-utils';
+import type { AStarHeuristicMode } from '@/types/graph';
 
 const INFINITY = Number.MAX_SAFE_INTEGER;
 let stepCounterGlobal = 0; 
@@ -26,6 +27,12 @@ function labelsForPath(path: string[], nodeMap: Map<string, Node>) {
 
 function edgeLabel(source: string, target: string, nodeMap: Map<string, Node>) {
   return `${nodeMap.get(source)?.label ?? source}-${nodeMap.get(target)?.label ?? target}`;
+}
+
+function euclideanDistance(nodeA: Node, nodeB: Node): number {
+  const dx = nodeA.x - nodeB.x;
+  const dy = nodeA.y - nodeB.y;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 function buildWeightedAdjacency(
@@ -64,13 +71,65 @@ function buildUnweightedAdjacency(
   return adj;
 }
 
-// Helper: Euclidean distance for A*
-function heuristic(nodeA: Node, nodeB: Node): number {
-  // The app allows arbitrary edge weights, so a geometric heuristic can easily
-  // overestimate the true path cost and break A* optimality. A neutral heuristic
-  // preserves correctness for all supported graphs.
+function getMinWeightPerPixel(nodes: Node[], edges: Edge[]): number {
+  let minRatio = Number.POSITIVE_INFINITY;
+
+  for (const edge of edges) {
+    const normalizedEdge = normalizeEdge(edge);
+    const source = nodes.find(node => node.id === edge.source);
+    const target = nodes.find(node => node.id === edge.target);
+    if (!source || !target) continue;
+
+    const distance = euclideanDistance(source, target);
+    if (distance <= 0) continue;
+    if (!Number.isFinite(normalizedEdge.weight) || normalizedEdge.weight < 0) continue;
+
+    minRatio = Math.min(minRatio, normalizedEdge.weight / distance);
+  }
+
+  if (!Number.isFinite(minRatio) || minRatio === Number.POSITIVE_INFINITY) {
+    return 0;
+  }
+
+  return minRatio;
+}
+
+function heuristic(
+  nodeA: Node,
+  nodeB: Node,
+  mode: AStarHeuristicMode,
+  heuristicScale: number
+): number {
   if (!nodeA || !nodeB) return 0;
-  return 0;
+  if (mode === 'zero') return 0;
+  return euclideanDistance(nodeA, nodeB) * heuristicScale;
+}
+
+function scoreBreakdown(
+  node: Node,
+  goal: Node,
+  mode: AStarHeuristicMode,
+  heuristicScale: number,
+  gValue: number
+) {
+  const hValue = heuristic(node, goal, mode, heuristicScale);
+  return {
+    gValue,
+    hValue,
+    fValue: gValue + hValue,
+  };
+}
+
+function serializeDistanceMatrix(
+  matrix: number[][],
+  affectedPairs?: Set<string>
+): Array<Array<number | string>> {
+  return matrix.map((row, rowIndex) =>
+    row.map((value, colIndex) => {
+      if (affectedPairs?.has(`${rowIndex}:${colIndex}`)) return '-inf';
+      return value === INFINITY ? 'inf' : value;
+    })
+  );
 }
 
 // Helper: DSU for Kruskal
@@ -264,7 +323,8 @@ export function aStar(
   nodes: Node[],
   edges: Edge[],
   startNodeId: string,
-  endNodeId: string
+  endNodeId: string,
+  heuristicMode: AStarHeuristicMode = 'euclidean'
 ): AlgorithmStep[] {
   stepCounterGlobal = 0;
   const steps: AlgorithmStep[] = [];
@@ -278,6 +338,7 @@ export function aStar(
   }
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
   const adj = buildWeightedAdjacency(nodes, edges);
+  const heuristicScale = getMinWeightPerPixel(nodes, edges);
 
   const openSet: { id: string; fScore: number }[] = []; // Array acting as PQ
   const closedSet: Set<string> = new Set(); // Set to keep track of processed nodes
@@ -295,10 +356,21 @@ export function aStar(
     return steps;
   }
 
-  fScore.set(startNodeId, heuristic(startNodeObj, endNodeObj));
+  const startScores = scoreBreakdown(startNodeObj, endNodeObj, heuristicMode, heuristicScale, 0);
+  fScore.set(startNodeId, startScores.fValue);
   openSet.push({ id: startNodeId, fScore: fScore.get(startNodeId)! });
 
-  steps.push(messageStep('aStarStart', { start: startNodeObj.label, end: endNodeObj.label }));
+  steps.push(messageStep('aStarStart', {
+    start: startNodeObj.label,
+    end: endNodeObj.label,
+    mode: heuristicMode,
+  }));
+  steps.push(messageStep('aStarScoreState', {
+    node: startNodeObj.label,
+    gScore: startScores.gValue,
+    hScore: startScores.hValue.toFixed(2),
+    fScore: startScores.fValue.toFixed(2),
+  }));
   steps.push({ id: generateStepId(), type: 'visit-node', nodeId: startNodeId, color: 'hsl(var(--accent))' });
 
   while (openSet.length > 0) {
@@ -310,7 +382,7 @@ export function aStar(
     }
     closedSet.add(currentId); 
 
-    if (currentId === endNodeId) { 
+      if (currentId === endNodeId) {
       const pathNodes: string[] = [];
       let curr: string | null = endNodeId;
       let pathReconstructionGuard = 0;
@@ -331,12 +403,20 @@ export function aStar(
          steps.push(messageStep('aStarInvalidStart'));
       } else {
         steps.push({ id: generateStepId(), type: 'highlight-path', path: pathNodes });
-        steps.push(messageStep('aStarBestPath', { path: labelsForPath(pathNodes, nodeMap), cost: gScore.get(endNodeId)! }));
+        steps.push(messageStep('aStarBestPath', { path: labelsForPath(pathNodes, nodeMap), cost: gScore.get(endNodeId)!, mode: heuristicMode }));
       }
       return steps;
     }
 
     if (currentId !== startNodeId) { 
+         const currentNode = nodeMap.get(currentId)!;
+         const currentScores = scoreBreakdown(currentNode, endNodeObj, heuristicMode, heuristicScale, gScore.get(currentId)!);
+         steps.push(messageStep('aStarScoreState', {
+           node: currentNode.label,
+           gScore: currentScores.gValue,
+           hScore: currentScores.hValue.toFixed(2),
+           fScore: currentScores.fValue.toFixed(2),
+         }));
          steps.push({ id: generateStepId(), type: 'visit-node', nodeId: currentId });
     }
 
@@ -347,13 +427,14 @@ export function aStar(
 
       const neighborNode = nodeMap.get(neighborId)!; // Should exist
       const tentativeGScore = gScore.get(currentId)! + weight;
+      const tentativeScores = scoreBreakdown(neighborNode, endNodeObj, heuristicMode, heuristicScale, tentativeGScore);
 
       steps.push({ id: generateStepId(), type: 'traverse-edge', edgeId, nodeId: neighborId, highlightSourceNodeId: currentId });
 
       if (tentativeGScore < (gScore.get(neighborId) || INFINITY)) {
         cameFrom.set(neighborId, { nodeId: currentId, edgeId });
         gScore.set(neighborId, tentativeGScore);
-        const newFScore = tentativeGScore + heuristic(neighborNode, endNodeObj);
+        const newFScore = tentativeScores.fValue;
         fScore.set(neighborId, newFScore);
         
         const openSetIndex = openSet.findIndex(item => item.id === neighborId);
@@ -362,7 +443,12 @@ export function aStar(
         } else {
           openSet.push({ id: neighborId, fScore: newFScore }); 
         }
-        steps.push(messageStep('aStarScoreUpdated', { node: neighborNode.label, gScore: gScore.get(neighborId)!, fScore: fScore.get(neighborId)! }));
+        steps.push(messageStep('aStarScoreUpdated', {
+          node: neighborNode.label,
+          gScore: tentativeScores.gValue.toFixed(2),
+          hScore: tentativeScores.hValue.toFixed(2),
+          fScore: tentativeScores.fValue.toFixed(2),
+        }));
       }
     });
   }
@@ -505,7 +591,11 @@ export function floydWarshall(
     }
   });
 
-  steps.push(messageStep('floydWarshallStart'));
+  steps.push(
+    messageStep('floydWarshallStart', undefined, {
+      matrixSnapshot: serializeDistanceMatrix(dist),
+    })
+  );
 
   for (let k_idx = 0; k_idx < numNodes; k_idx++) {
     const k_node = nodes[k_idx];
@@ -516,6 +606,8 @@ export function floydWarshall(
       messageKey: 'algorithmSteps.intermediateNode',
       messageValues: { node: k_node.label, index: k_idx },
       color: 'hsl(var(--secondary-foreground))',
+      matrixSnapshot: serializeDistanceMatrix(dist),
+      matrixContext: { k: k_idx, viaNodeId: k_node.id },
     });
 
     for (let i_idx = 0; i_idx < numNodes; i_idx++) {
@@ -541,6 +633,13 @@ export function floydWarshall(
               via: k_node.label,
             },
             matrixCell: { row: i_idx, col: j_idx, value: dist[i_idx][j_idx] },
+            matrixSnapshot: serializeDistanceMatrix(dist),
+            matrixContext: {
+              k: k_idx,
+              i: i_idx,
+              j: j_idx,
+              viaNodeId: k_node.id,
+            },
           });
         }
       }
@@ -567,7 +666,17 @@ export function floydWarshall(
     }
   });
 
-  steps.push(messageStep(negativeCycleIndices.size > 0 ? 'floydWarshallCompleteNegative' : 'floydWarshallComplete'));
+  const finalMatrixSnapshot = serializeDistanceMatrix(dist, affectedPairs);
+
+  steps.push(
+    messageStep(
+      negativeCycleIndices.size > 0 ? 'floydWarshallCompleteNegative' : 'floydWarshallComplete',
+      undefined,
+      {
+        matrixSnapshot: finalMatrixSnapshot,
+      }
+    )
+  );
 
   function getPath(i: number, j: number): string[] {
     if (next[i][j] === null || affectedPairs.has(affectedPairKey(i, j))) return [];
@@ -607,7 +716,7 @@ export function floydWarshall(
 
   pathsByStartNode.forEach((paths, startNodeId) => {
     const startNode = nodeMap.get(startNodeId)!;
-    steps.push(messageStep('pathsFrom', { node: startNode.label }));
+    steps.push(messageStep('pathsFrom', { node: startNode.label }, { matrixSnapshot: finalMatrixSnapshot }));
 
     paths.forEach(({ target, path, distance }) => {
       const targetNode = nodeMap.get(target)!;
@@ -616,15 +725,27 @@ export function floydWarshall(
         type: 'highlight-path',
         path,
         color: 'hsl(var(--primary))',
+        matrixSnapshot: finalMatrixSnapshot,
       });
-      steps.push(messageStep('pathDistance', { target: targetNode.label, path: labelsForPath(path, nodeMap), distance }));
+      steps.push(
+        messageStep(
+          'pathDistance',
+          { target: targetNode.label, path: labelsForPath(path, nodeMap), distance },
+          { matrixSnapshot: finalMatrixSnapshot }
+        )
+      );
     });
   });
 
-  steps.push(messageStep('distanceMatrix'));
+  steps.push(messageStep('distanceMatrix', undefined, { matrixSnapshot: finalMatrixSnapshot }));
 
   const headerRow = ['', ...nodes.map(n => n.label)];
-  steps.push({ id: generateStepId(), type: 'message', message: headerRow.join('\t') });
+  steps.push({
+    id: generateStepId(),
+    type: 'message',
+    message: headerRow.join('\t'),
+    matrixSnapshot: finalMatrixSnapshot,
+  });
 
   nodes.forEach((node, i) => {
     const row = [
@@ -634,7 +755,12 @@ export function floydWarshall(
         return dist[i][j] === INFINITY ? 'inf' : dist[i][j];
       }),
     ];
-    steps.push({ id: generateStepId(), type: 'message', message: row.join('\t') });
+    steps.push({
+      id: generateStepId(),
+      type: 'message',
+      message: row.join('\t'),
+      matrixSnapshot: finalMatrixSnapshot,
+    });
   });
 
   return steps;
@@ -681,12 +807,23 @@ export function kruskal(
   }
 
   if (mstEdges.length > 0) {
-    steps.push(messageStep('mstSelectedEdges', {
-      edges: mstEdges.map(edge => edgeLabel(edge.source, edge.target, nodeMap)).join(', '),
-    }));
+    const mstEdgeIds = mstEdges.map(edge => edge.id);
+    steps.push(
+      messageStep(
+        'finalMst',
+        {
+          edges: mstEdges.map(edge => edgeLabel(edge.source, edge.target, nodeMap)).join(', '),
+          weight: mstWeight,
+        },
+        {
+          mstEdges: mstEdgeIds,
+          totalWeight: mstWeight,
+        }
+      )
+    );
+  } else {
+    steps.push(messageStep('mstDisconnected', undefined, { totalWeight: mstWeight }));
   }
-
-  steps.push(messageStep('kruskalComplete', { weight: mstWeight }));
   return steps;
 }
 
@@ -763,16 +900,29 @@ export function prim(
     steps.push(messageStep('mstDisconnectedAllNodes'));
   }
 
-  if (parent.size > 0) {
-    const mstEdges = Array.from(parent.entries())
-      .filter(([, info]) => info.nodeId && info.edgeId)
-      .map(([nodeId, info]) => edgeLabel(info.nodeId!, nodeId, nodeMap));
+  const mstEdgeRecords = Array.from(parent.entries())
+    .filter(([, info]) => info.nodeId && info.edgeId)
+    .map(([nodeId, info]) => ({
+      edgeId: info.edgeId!,
+      label: edgeLabel(info.nodeId!, nodeId, nodeMap),
+    }));
 
-    if (mstEdges.length > 0) {
-      steps.push(messageStep('mstSelectedEdges', { edges: mstEdges.join(', ') }));
-    }
+  if (mstEdgeRecords.length > 0) {
+    steps.push(
+      messageStep(
+        'finalMst',
+        {
+          edges: mstEdgeRecords.map(edge => edge.label).join(', '),
+          weight: mstWeight,
+        },
+        {
+          mstEdges: mstEdgeRecords.map(edge => edge.edgeId),
+          totalWeight: mstWeight,
+        }
+      )
+    );
+  } else {
+    steps.push(messageStep('mstDisconnectedAllNodes', undefined, { totalWeight: mstWeight }));
   }
-
-  steps.push(messageStep('primComplete', { weight: mstWeight }));
   return steps;
 }

@@ -31,6 +31,10 @@ export interface AlgorithmStep {
   messageValues?: Record<string, string | number>;
   color?: string; // Optional color for highlighting
   matrixCell?: { row: number; col: number; value: number | string }; // For Floyd-Warshall matrix updates
+  matrixSnapshot?: Array<Array<number | string>>;
+  matrixContext?: { k?: number; i?: number; j?: number; viaNodeId?: string };
+  mstEdges?: string[];
+  totalWeight?: number;
 }
 
 export type AlgorithmType = 
@@ -42,6 +46,8 @@ export type AlgorithmType =
   | 'floyd-warshall'
   | 'kruskal'
   | 'prim';
+
+export type AStarHeuristicMode = 'zero' | 'euclidean';
 
 export type SelectedToolType = 'pointer' | 'add-edge'; // Removed 'add-node' and 'delete-node'
 export type EdgeDrawType = 'straight' | 'curved';
@@ -77,5 +83,6 @@ export interface ExecutionLogEntry {
   edgesCountSnapshot: number; // E at time of execution
   startNodeLabel?: string;
   endNodeLabel?: string;
+  heuristicMode?: AStarHeuristicMode;
   resultSummary: string;
 }
